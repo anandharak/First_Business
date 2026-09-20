@@ -1,13 +1,11 @@
 import React from 'react';
 import { Shop } from '../../types';
+import { CustomerInfo } from '../customer/CustomerRegistrationModal';
 import {
   QrCode,
-  Store,
   User,
   ShoppingBag,
-  Sparkles,
-  ChevronDown,
-  ExternalLink,
+  Camera,
 } from 'lucide-react';
 import { playSound } from '../../utils/audio';
 
@@ -15,11 +13,13 @@ interface HeaderProps {
   /** 'customer' or 'owner' – determines which UI elements are shown */
   userRole: 'customer' | 'owner';
   /** Currently active shop (always defined when a shop exists) */
-  activeShop: Shop;
+  activeShop?: Shop;
   /** All shops – used only for owner when they can switch shops */
   allShops: Shop[];
   /** Number of items in the customer's cart */
   cartCount: number;
+  /** Customer identity info */
+  customerInfo?: CustomerInfo | null;
   /** Called when a different shop is selected from dropdown */
   onShopChange: (shopId: string) => void;
   /** Open the QR modal (owner only) */
@@ -28,6 +28,10 @@ interface HeaderProps {
   onOpenRegisterShop: () => void;
   /** Open the cart drawer (customer only) */
   onOpenCart: () => void;
+  /** Open customer QR camera scanner (customer only) */
+  onOpenScanner?: () => void;
+  /** Open customer details & profile modal (customer only) */
+  onOpenCustomerProfile?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -35,15 +39,18 @@ export const Header: React.FC<HeaderProps> = ({
   activeShop,
   allShops,
   cartCount,
+  customerInfo,
   onShopChange,
   onOpenQrModal,
   onOpenRegisterShop,
   onOpenCart,
+  onOpenScanner,
+  onOpenCustomerProfile,
 }) => {
   return (
     <header className="top-nav-bar">
       <div className="top-nav-inner">
-        {/* Left Brand + Shop Switcher */}
+        {/* Left Brand + Shop Indicator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div className="brand-logo">
             <span style={{ fontSize: '1.5rem' }}>⚡</span>
@@ -52,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Owner can switch between their shops */}
-          {userRole === 'owner' && (
+          {userRole === 'owner' && activeShop && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <select
                 value={activeShop.id}
@@ -81,10 +88,57 @@ export const Header: React.FC<HeaderProps> = ({
               </select>
             </div>
           )}
+
+          {/* Customer active shop indicator badge */}
+          {userRole === 'customer' && activeShop && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 12px',
+                borderRadius: 20,
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid var(--border-subtle)',
+                fontSize: '0.8rem',
+                color: '#e2e8f0',
+                fontWeight: 600,
+              }}
+            >
+              <span>🏪</span>
+              <span>{activeShop.name}</span>
+            </div>
+          )}
         </div>
 
         {/* Right side – actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Customer: Scan QR button */}
+          {userRole === 'customer' && onOpenScanner && (
+            <button
+              onClick={onOpenScanner}
+              className="btn btn-secondary btn-sm"
+              title="Scan any shop QR code or table standee"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Camera size={15} color="var(--primary)" />
+              <span>Scan QR</span>
+            </button>
+          )}
+
+          {/* Customer: My Details / Profile */}
+          {userRole === 'customer' && onOpenCustomerProfile && (
+            <button
+              onClick={onOpenCustomerProfile}
+              className="btn btn-secondary btn-sm"
+              title="View and edit your registered customer details"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <User size={15} />
+              <span>{customerInfo?.name ? customerInfo.name.split(' ')[0] : 'My Details'}</span>
+            </button>
+          )}
+
           {/* QR code – owner only */}
           {userRole === 'owner' && (
             <button
@@ -93,9 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="View & Download Shop QR Code"
             >
               <QrCode size={15} />
-              <span className="d-sm-inline" style={{ display: 'none' }}>
-                Store QR
-              </span>
+              <span>Store QR</span>
             </button>
           )}
 

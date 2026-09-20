@@ -20,39 +20,55 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
   const [upiId, setUpiId] = useState('');
   const [address, setAddress] = useState('');
   const [tableCount, setTableCount] = useState<number>(0);
-  const [bannerUrl, setBannerUrl] = useState('');
+  const [bannerUrl, setBannerUrl] = useState(
+    'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80'
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setErrorMessage('Please enter a shop or restaurant name.');
+      return;
+    }
 
-    playSound('success');
-    const slug = name
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    const baseSlug = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
+    const slug = `${baseSlug || 'shop'}-${Date.now().toString().slice(-4)}`;
 
     try {
       const newShop = await StoreService.registerShop({
         name: name.trim(),
-        slug: slug || `shop-${Date.now()}`,
+        slug,
         category,
-        tagline: tagline.trim(),
+        tagline: tagline.trim() || 'Order directly from your table or phone',
         description: `${name.trim()} — Order directly from your table or phone.`,
         phone: phone.trim(),
         upiId: upiId.trim(),
         address: address.trim(),
         tableCount: Number(tableCount) || 0,
         isOpen: true,
-        bannerUrl: bannerUrl.trim(),
+        bannerUrl:
+          bannerUrl.trim() ||
+          'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80',
         currency: '₹',
         deliveryCharge: 30,
         freeDeliveryAbove: 499,
       });
 
+      playSound('success');
       onRegistered(newShop);
-    } catch (err) {
-      console.error('Failed to register shop in MongoDB:', err);
+    } catch (err: any) {
+      console.error('Shop registration error:', err);
+      setErrorMessage(err.message || 'Failed to create shop. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -213,14 +229,49 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
             </div>
           </div>
 
+          {/* Error message */}
+          {errorMessage && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: '10px 14px',
+                borderRadius: 10,
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#f87171',
+                fontSize: '0.85rem',
+              }}
+            >
+              ⚠️ {errorMessage}
+            </div>
+          )}
+
           {/* Footer CTA */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 18 }}>
-            <button type="button" onClick={onClose} className="btn btn-secondary">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 18, marginTop: 18 }}>
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="btn btn-secondary">
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary btn-lg">
-              <Sparkles size={18} />
-              Register & Generate QR Code
+            <button type="submit" disabled={isSubmitting} className="btn btn-primary btn-lg">
+              {isSubmitting ? (
+                <>
+                  <div
+                    style={{
+                      width: 16,
+                      height: 16,
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      borderTopColor: '#fff',
+                      borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite',
+                    }}
+                  />
+                  Registering Shop…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={18} />
+                  Register & Generate QR Code
+                </>
+              )}
             </button>
           </div>
         </form>

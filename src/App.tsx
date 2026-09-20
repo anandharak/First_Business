@@ -14,6 +14,8 @@ import { CustomerShopFinder } from './components/customer/CustomerShopFinder';
 import { CartAndCheckoutModal } from './components/customer/CartAndCheckoutModal';
 import { LiveOrderStatus } from './components/customer/LiveOrderStatus';
 import { PostMealRatingModal } from './components/customer/PostMealRatingModal';
+import { CustomerQrScannerModal } from './components/customer/CustomerQrScannerModal';
+import { CustomerProfileModal } from './components/customer/CustomerProfileModal';
 import { playSound } from './utils/audio';
 import { BellRing, Database } from 'lucide-react';
 
@@ -62,6 +64,8 @@ export const App: React.FC = () => {
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
   const [activeTrackingOrderId, setActiveTrackingOrderId] = useState<string | null>(null);
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
+  const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // ─── Customer reg modal trigger ────────────────────────
   const [showCustomerReg, setShowCustomerReg] = useState(false);
@@ -152,6 +156,17 @@ export const App: React.FC = () => {
     setCustomerInfo(info);
     localStorage.setItem(CUSTOMER_KEY, JSON.stringify(info));
     setShowCustomerReg(false);
+    showToast(`👋 Welcome ${info.name}!`, 'Scan a shop QR code or browse the store below.');
+  };
+
+  const handleShopSelectedFromScanner = (shop: Shop, table?: string) => {
+    setAllShops((prev) => (prev.find((s) => s.id === shop.id) ? prev : [...prev, shop]));
+    setActiveShopId(shop.id);
+    if (table) setTableParam(table);
+    setCart([]);
+    setActiveOrder(null);
+    setActiveTrackingOrderId(null);
+    showToast(`🏪 Connected to ${shop.name}`, `Table: ${table || 'Counter'}`);
   };
 
   // ─── Cart handlers ─────────────────────────────────────
@@ -269,13 +284,20 @@ export const App: React.FC = () => {
   // ══════════════════════════════════════════════════════
   if (userRole === 'customer' && !activeShop) {
     return (
-      <CustomerShopFinder
-        onShopFound={(shop, table) => {
-          setAllShops((prev) => (prev.find((s) => s.id === shop.id) ? prev : [...prev, shop]));
-          setActiveShopId(shop.id);
-          if (table) setTableParam(table);
-        }}
-      />
+      <>
+        <CustomerShopFinder
+          onShopFound={(shop, table) => {
+            handleShopSelectedFromScanner(shop, table);
+          }}
+          onOpenScanner={() => setIsScannerModalOpen(true)}
+        />
+        {isScannerModalOpen && (
+          <CustomerQrScannerModal
+            onClose={() => setIsScannerModalOpen(false)}
+            onShopSelected={(shop, table) => handleShopSelectedFromScanner(shop, table)}
+          />
+        )}
+      </>
     );
   }
 
@@ -345,7 +367,7 @@ export const App: React.FC = () => {
         activeShop={activeShop}
         allShops={userRole === 'owner' ? allShops : []}
         cartCount={cart.reduce((s, i) => s + i.quantity, 0)}
-
+        customerInfo={customerInfo}
         onShopChange={(id) => {
           setActiveShopId(id);
           setCart([]);
@@ -355,6 +377,8 @@ export const App: React.FC = () => {
         onOpenQrModal={() => setIsQrModalOpen(true)}
         onOpenRegisterShop={() => setIsRegisterModalOpen(true)}
         onOpenCart={() => setIsCartModalOpen(true)}
+        onOpenScanner={() => setIsScannerModalOpen(true)}
+        onOpenCustomerProfile={() => setIsProfileModalOpen(true)}
       />
 
       {/* MongoDB status strip */}
@@ -471,6 +495,34 @@ export const App: React.FC = () => {
           shop={activeShop}
           onClose={() => setRatingOrder(null)}
           onSubmitted={() => setRatingOrder(null)}
+        />
+      )}
+
+      {/* Customer QR Scanner Modal */}
+      {isScannerModalOpen && (
+        <CustomerQrScannerModal
+          onClose={() => setIsScannerModalOpen(false)}
+          onShopSelected={(shop, table) => handleShopSelectedFromScanner(shop, table)}
+        />
+      )}
+
+      {/* Customer Details & Profile Modal */}
+      {isProfileModalOpen && customerInfo && (
+        <CustomerProfileModal
+          customerInfo={customerInfo}
+          activeShop={activeShop}
+          onClose={() => setIsProfileModalOpen(false)}
+          onUpdateCustomerInfo={(updated) => {
+            setCustomerInfo(updated);
+            localStorage.setItem(CUSTOMER_KEY, JSON.stringify(updated));
+            showToast('👤 Profile Updated', `Saved details for ${updated.name}`);
+          }}
+          onOpenScanner={() => setIsScannerModalOpen(true)}
+          onViewOrder={(orderId) => setActiveTrackingOrderId(orderId)}
+          onSwitchRole={() => {
+            localStorage.removeItem(ROLE_KEY);
+            setUserRole(null);
+          }}
         />
       )}
     </div>

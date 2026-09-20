@@ -187,13 +187,50 @@ app.get('/api/shops', async (req, res) => {
 
 app.post('/api/shops', async (req, res) => {
   try {
-    const newShop = await ShopModel.create({
+    const rawName = (req.body.name || 'New Shop').trim();
+    let baseSlug = (req.body.slug || rawName)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    if (!baseSlug) baseSlug = `shop-${Date.now()}`;
+
+    let slug = baseSlug;
+    if (mongoose.connection.readyState === 1) {
+      let counter = 1;
+      while (await ShopModel.findOne({ slug })) {
+        slug = `${baseSlug}-${counter++}`;
+      }
+    } else {
+      slug = `${baseSlug}-${Date.now().toString().slice(-4)}`;
+    }
+
+    const defaultBanner =
+      req.body.category === 'cafe'
+        ? 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=1200&q=80'
+        : req.body.category === 'clothing'
+        ? 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80'
+        : 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80';
+
+    const shopPayload = {
       ...req.body,
       id: req.body.id || `shop-${Date.now()}`,
-    });
-    res.status(201).json(newShop);
+      name: rawName,
+      slug,
+      bannerUrl: req.body.bannerUrl || defaultBanner,
+      currency: req.body.currency || '₹',
+      isOpen: req.body.isOpen !== undefined ? req.body.isOpen : true,
+    };
+
+    if (mongoose.connection.readyState === 1) {
+      const newShop = await ShopModel.create(shopPayload);
+      return res.status(201).json(newShop);
+    } else {
+      console.warn('MongoDB not ready, returning fallback shop object');
+      return res.status(201).json({ ...shopPayload, createdAt: new Date().toISOString() });
+    }
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error('Failed to create shop:', err);
+    res.status(500).json({ error: err.message || 'Failed to register shop' });
   }
 });
 

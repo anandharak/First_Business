@@ -41,8 +41,30 @@ export const CartAndCheckoutModal: React.FC<CartAndCheckoutModalProps> = ({
   const [step, setStep] = useState<'cart' | 'checkout' | 'online_payment_sim'>('cart');
   const [orderType, setOrderType] = useState<OrderType>(tableParam ? 'dine_in' : 'dine_in');
   const [tableOrAddress, setTableOrAddress] = useState(tableParam || 'Table 1');
-  const [customerName, setCustomerName] = useState('Anand');
-  const [customerPhone, setCustomerPhone] = useState('+91 98765 43210');
+  const [customerName, setCustomerName] = useState(() => {
+    try {
+      const saved = localStorage.getItem('qrorder_customer');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.name) return parsed.name;
+      }
+    } catch {
+      // ignore
+    }
+    return 'Guest';
+  });
+  const [customerPhone, setCustomerPhone] = useState(() => {
+    try {
+      const saved = localStorage.getItem('qrorder_customer');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.phone) return parsed.phone;
+      }
+    } catch {
+      // ignore
+    }
+    return '';
+  });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('online');
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);

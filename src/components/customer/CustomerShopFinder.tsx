@@ -5,9 +5,13 @@ import { Shop } from '../../types';
 
 interface CustomerShopFinderProps {
   onShopFound: (shop: Shop, table?: string) => void;
+  onOpenScanner?: () => void;
 }
 
-export const CustomerShopFinder: React.FC<CustomerShopFinderProps> = ({ onShopFound }) => {
+export const CustomerShopFinder: React.FC<CustomerShopFinderProps> = ({
+  onShopFound,
+  onOpenScanner,
+}) => {
   const [slug, setSlug] = useState('');
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
@@ -114,31 +118,61 @@ export const CustomerShopFinder: React.FC<CustomerShopFinderProps> = ({ onShopFo
           </p>
         </div>
 
-        {/* Instruction Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 32 }}>
-          <div style={{
-            background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.15)',
-            borderRadius: 14, padding: '18px 16px', textAlign: 'center',
-          }}>
-            <Scan size={24} color="#f97316" style={{ marginBottom: 10 }} />
-            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff', margin: '0 0 6px 0' }}>
-              Scan QR Code
+        {/* Interactive Action Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 28 }}>
+          <div
+            onClick={onOpenScanner}
+            style={{
+              background: 'rgba(249,115,22,0.08)',
+              border: '1.5px solid rgba(249,115,22,0.3)',
+              borderRadius: 16,
+              padding: '20px 16px',
+              textAlign: 'center',
+              cursor: onOpenScanner ? 'pointer' : 'default',
+              transition: 'transform 0.2s, background 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (onOpenScanner) {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.background = 'rgba(249,115,22,0.14)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (onOpenScanner) {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'rgba(249,115,22,0.08)';
+              }
+            }}
+          >
+            <Scan size={28} color="#f97316" style={{ marginBottom: 10 }} />
+            <h4 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#fff', margin: '0 0 6px 0' }}>
+              📷 Scan QR Code
             </h4>
-            <p style={{ fontSize: '0.74rem', color: '#64748b', margin: 0, lineHeight: 1.4 }}>
-              Open your phone camera and point it at the shop's QR code at your table
+            <p style={{ fontSize: '0.74rem', color: '#94a3b8', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+              Open camera to scan table standee or pick photo
             </p>
+            {onOpenScanner && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700 }}>
+                Tap to Scan →
+              </span>
+            )}
           </div>
 
-          <div style={{
-            background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)',
-            borderRadius: 14, padding: '18px 16px', textAlign: 'center',
-          }}>
-            <Link2 size={24} color="#818cf8" style={{ marginBottom: 10 }} />
-            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff', margin: '0 0 6px 0' }}>
-              Enter Shop Link
+          <div
+            style={{
+              background: 'rgba(99,102,241,0.06)',
+              border: '1.5px solid rgba(99,102,241,0.2)',
+              borderRadius: 16,
+              padding: '20px 16px',
+              textAlign: 'center',
+            }}
+          >
+            <Link2 size={28} color="#818cf8" style={{ marginBottom: 10 }} />
+            <h4 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#fff', margin: '0 0 6px 0' }}>
+              🔗 Enter Store Link
             </h4>
-            <p style={{ fontSize: '0.74rem', color: '#64748b', margin: 0, lineHeight: 1.4 }}>
-              Ask the shop owner for their store link or enter the shop name below
+            <p style={{ fontSize: '0.74rem', color: '#94a3b8', margin: 0, lineHeight: 1.4 }}>
+              Enter shop name or paste the store link below
             </p>
           </div>
         </div>
