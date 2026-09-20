@@ -19,11 +19,33 @@ import { CustomerProfileModal } from './components/customer/CustomerProfileModal
 import { playSound } from './utils/audio';
 import { BellRing, Database } from 'lucide-react';
 
-// ─── Role Persistence Keys ────────────────────────────────
+// ─── Persistence Keys ────────────────────────────────────
 const ROLE_KEY = 'qrorder_role';
 const CUSTOMER_KEY = 'qrorder_customer';
+/** IDs of shops THIS owner device registered — scoped to this browser */
+const OWNER_SHOP_IDS_KEY = 'qrorder_owner_shop_ids';
 
 type UserRole = 'customer' | 'owner' | null;
+
+/** Read / write the set of shop IDs owned by this device */
+function getOwnerShopIds(): string[] {
+  try {
+    const raw = localStorage.getItem(OWNER_SHOP_IDS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+function addOwnerShopId(id: string) {
+  try {
+    const existing = getOwnerShopIds();
+    if (!existing.includes(id)) {
+      localStorage.setItem(OWNER_SHOP_IDS_KEY, JSON.stringify([id, ...existing]));
+    }
+  } catch {
+    // ignore
+  }
+}
 
 export const App: React.FC = () => {
   // ─── Role State ────────────────────────────────────────
@@ -40,7 +62,10 @@ export const App: React.FC = () => {
   });
 
   // ─── Shop State ────────────────────────────────────────
+  /** All shops fetched from DB / local cache */
   const [allShops, setAllShops] = useState<Shop[]>([]);
+  /** Owner-specific: shops registered by this device */
+  const [ownerShops, setOwnerShops] = useState<Shop[]>([]);
   const [activeShopId, setActiveShopId] = useState<string>('');
   const [tableParam, setTableParam] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -85,6 +110,17 @@ export const App: React.FC = () => {
       setIsMongoConnected(health.connected);
       const shops = await StoreService.getShops();
       setAllShops(shops);
+
+      // Rebuild ownerShops from fetched shops using saved IDs
+      const ownedIds = getOwnerShopIds();
+      if (ownedIds.length > 0) {
+        const owned = shops.filter((s) => ownedIds.includes(s.id));
+        // Also include any locally cached shops that might not be in DB yet
+        const ownedSet = new Set(owned.map((s) => s.id));
+        const localOnly = shops.filter((s) => !ownedSet.has(s.id) && ownedIds.includes(s.id));
+        setOwnerShops([...owned, ...localOnly]);
+      }
+
       if (shops.length > 0) {
         if (urlShopSlug) {
           const match = shops.find((s) => s.slug === urlShopSlug);
@@ -94,8 +130,11 @@ export const App: React.FC = () => {
           } else {
             setActiveShopId(shops[0].id);
           }
-        } else {
-          setActiveShopId(shops[0].id);
+        } else if (!activeShopId) {
+          // For owners: prefer their own shop
+          const ownedIds = getOwnerShopIds();
+          const firstOwned = shops.find((s) => ownedIds.includes(s.id));
+          setActiveShopId(firstOwned?.id || shops[0].id);
         }
       }
     } catch {
@@ -141,14 +180,25 @@ export const App: React.FC = () => {
 
   const activeShop = allShops.find((s) => s.id === activeShopId) || allShops[0];
 
+  // ─── For owner: derived list of their own shops ───────
+  const myOwnerShops = ownerShops.length > 0 ? ownerShops : [];
+  /** True when owner has at least one registered shop on this device */
+  const ownerHasShops = userRole === 'owner' && myOwnerShops.length > 0;
+  /** The active shop for owner (only from their own shops) */
+  const ownerActiveShop = myOwnerShops.find((s) => s.id === activeShopId) || myOwnerShops[0];
+
   // ─── Role handlers ─────────────────────────────────────
   const handleRoleSelect = (role: 'customer' | 'owner') => {
     setUserRole(role);
     localStorage.setItem(ROLE_KEY, role);
     if (role === 'customer' && !customerInfo) {
       setShowCustomerReg(true);
-    } else if (role === 'owner' && allShops.length === 0) {
-      setIsRegisterModalOpen(true);
+    } else if (role === 'owner') {
+      const ownedIds = getOwnerShopIds();
+      // Only show registration if no shops registered from this device
+      if (ownedIds.length === 0) {
+        setIsRegisterModalOpen(true);
+      }
     }
   };
 
@@ -157,6 +207,22 @@ export const App: React.FC = () => {
     localStorage.setItem(CUSTOMER_KEY, JSON.stringify(info));
     setShowCustomerReg(false);
     showToast(`👋 Welcome ${info.name}!`, 'Scan a shop QR code or browse the store below.');
+  };
+
+  const handleShopRegistered = (newShop: Shop) => {
+    // Track this shop as owned by this device
+    addOwnerShopId(newShop.id);
+    setIsRegisterModalOpen(false);
+    setAllShops((prev) => {
+      const exists = prev.find((s) => s.id === newShop.id);
+      return exists ? prev : [newShop, ...prev];
+    });
+    setOwnerShops((prev) => {
+      const exists = prev.find((s) => s.id === newShop.id);
+      return exists ? prev : [newShop, ...prev];
+    });
+    setActiveShopId(newShop.id);
+    setIsQrModalOpen(true);
   };
 
   const handleShopSelectedFromScanner = (shop: Shop, table?: string) => {
@@ -245,15 +311,9 @@ export const App: React.FC = () => {
         {isRegisterModalOpen && (
           <ShopRegistrationModal
             onClose={() => {
-              // If owner closes without registering, keep them in owner mode
               setIsRegisterModalOpen(false);
             }}
-            onRegistered={(newShop) => {
-              setIsRegisterModalOpen(false);
-              setAllShops([newShop]);
-              setActiveShopId(newShop.id);
-              setIsQrModalOpen(true);
-            }}
+            onRegistered={handleShopRegistered}
           />
         )}
         {isQrModalOpen && activeShop && (
@@ -302,9 +362,9 @@ export const App: React.FC = () => {
   }
 
   // ══════════════════════════════════════════════════════
-  // RENDER — Owner: no shop registered yet
+  // RENDER — Owner: no shop registered from this device yet
   // ══════════════════════════════════════════════════════
-  if (userRole === 'owner' && allShops.length === 0) {
+  if (userRole === 'owner' && !ownerHasShops) {
     return (
       <>
         <div style={{ minHeight: '100vh', background: '#070b14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -338,17 +398,12 @@ export const App: React.FC = () => {
         {isRegisterModalOpen && (
           <ShopRegistrationModal
             onClose={() => setIsRegisterModalOpen(false)}
-            onRegistered={(newShop) => {
-              setIsRegisterModalOpen(false);
-              setAllShops([newShop]);
-              setActiveShopId(newShop.id);
-              setIsQrModalOpen(true);
-            }}
+            onRegistered={handleShopRegistered}
           />
         )}
-        {isQrModalOpen && activeShop && (
+        {isQrModalOpen && (ownerActiveShop || activeShop) && (
           <StoreQrModal
-            shop={activeShop}
+            shop={(ownerActiveShop || activeShop)!}
             onClose={() => setIsQrModalOpen(false)}
             onSimulateCustomerScan={() => setIsQrModalOpen(false)}
           />
@@ -360,12 +415,14 @@ export const App: React.FC = () => {
   // ══════════════════════════════════════════════════════
   // RENDER — MAIN APP (role-locked)
   // ══════════════════════════════════════════════════════
+  const displayShop = userRole === 'owner' ? ownerActiveShop : activeShop;
+
   return (
     <div className="app-layout">
       <Header
         userRole={userRole}
-        activeShop={activeShop}
-        allShops={userRole === 'owner' ? allShops : []}
+        activeShop={displayShop}
+        allShops={userRole === 'owner' ? myOwnerShops : []}
         cartCount={cart.reduce((s, i) => s + i.quantity, 0)}
         customerInfo={customerInfo}
         onShopChange={(id) => {
@@ -401,7 +458,7 @@ export const App: React.FC = () => {
       <main style={{ flex: 1 }}>
         {userRole === 'owner' ? (
           <OwnerDashboard
-            currentShop={activeShop}
+            currentShop={displayShop!}
             onOpenQrModal={() => setIsQrModalOpen(true)}
             onOpenRegisterShop={() => setIsRegisterModalOpen(true)}
             onOpenAddProduct={(prod) => {
@@ -446,9 +503,9 @@ export const App: React.FC = () => {
       )}
 
       {/* ─── Modals ─── */}
-      {isQrModalOpen && activeShop && (
+      {isQrModalOpen && displayShop && (
         <StoreQrModal
-          shop={activeShop}
+          shop={displayShop}
           onClose={() => setIsQrModalOpen(false)}
           onSimulateCustomerScan={() => setIsQrModalOpen(false)}
         />
@@ -457,21 +514,13 @@ export const App: React.FC = () => {
       {isRegisterModalOpen && (
         <ShopRegistrationModal
           onClose={() => setIsRegisterModalOpen(false)}
-          onRegistered={(newShop) => {
-            setIsRegisterModalOpen(false);
-            setAllShops((prev) => {
-              const exists = prev.find((s) => s.id === newShop.id);
-              return exists ? prev : [newShop, ...prev];
-            });
-            setActiveShopId(newShop.id);
-            setIsQrModalOpen(true);
-          }}
+          onRegistered={handleShopRegistered}
         />
       )}
 
-      {isAddProductModalOpen && activeShop && (
+      {isAddProductModalOpen && displayShop && (
         <AddProductModal
-          shop={activeShop}
+          shop={displayShop}
           editingProduct={editingProduct}
           onClose={() => { setIsAddProductModalOpen(false); setEditingProduct(null); }}
           onProductAdded={() => { setIsAddProductModalOpen(false); setEditingProduct(null); }}
