@@ -1,4 +1,4 @@
-export type ShopCategory = 'food' | 'clothing' | 'grocery' | 'electronics' | 'cafe' | 'other';
+export type ShopCategory = 'fast_food' | 'food' | 'cafe' | 'pizza' | 'clothing' | 'grocery' | 'electronics' | 'other';
 
 export type DietaryType = 'veg' | 'non-veg' | 'vegan' | 'none';
 
@@ -19,6 +19,7 @@ export interface Shop {
   currency: string;
   deliveryCharge: number;
   freeDeliveryAbove: number;
+  passwordHash?: string;
   createdAt: string;
 }
 

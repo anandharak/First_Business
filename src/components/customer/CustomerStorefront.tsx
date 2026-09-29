@@ -98,7 +98,7 @@ export const CustomerStorefront: React.FC<CustomerStorefrontProps> = ({
     return sum + price * item.quantity;
   }, 0);
 
-  const isFood = shop.category === 'food' || shop.category === 'cafe';
+  const isFood = shop.category === 'food' || shop.category === 'cafe' || shop.category === 'fast_food' || shop.category === 'pizza';
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '16px 16px 100px 16px' }}>

@@ -139,7 +139,7 @@ export const StoreQrModal: React.FC<StoreQrModalProps> = ({
                 📍 {selectedTable}
               </div>
               <p style={{ fontSize: '0.78rem', color: '#475569', fontWeight: 600 }}>
-                Scan with your phone camera to order & pay
+                Scan QR &rarr; Browse Menu &rarr; Place Dine-In Order
               </p>
             </div>
           </div>

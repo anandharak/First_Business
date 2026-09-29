@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Shop, ShopCategory } from '../../types';
 import { StoreService } from '../../services/storeService';
-import { Store, X, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Store, X, Sparkles, CheckCircle2, Eye, EyeOff, Copy, Check, ShieldCheck } from 'lucide-react';
 import { playSound } from '../../utils/audio';
+import { seedStarterProductsForShop } from '../../utils/starterMenu';
 
 interface ShopRegistrationModalProps {
   onClose: () => void;
@@ -14,22 +15,41 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
   onRegistered,
 }) => {
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<ShopCategory>('food');
+  const [category, setCategory] = useState<ShopCategory>('fast_food');
   const [tagline, setTagline] = useState('');
   const [phone, setPhone] = useState('');
   const [upiId, setUpiId] = useState('');
   const [address, setAddress] = useState('');
-  const [tableCount, setTableCount] = useState<number>(0);
+  const [tableCount, setTableCount] = useState<number>(6);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [bannerUrl, setBannerUrl] = useState(
-    'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80'
+    'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1200&q=80'
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // After-registration credential reveal
+  const [createdShop, setCreatedShop] = useState<Shop | null>(null);
+  const [copiedId, setCopiedId] = useState(false);
+  const [copiedPw, setCopiedPw] = useState(false);
+
+  const copyToClipboard = async (text: string, type: 'id' | 'pw') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (type === 'id') { setCopiedId(true); setTimeout(() => setCopiedId(false), 2000); }
+      else { setCopiedPw(true); setTimeout(() => setCopiedPw(false), 2000); }
+    } catch { /* ignore */ }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setErrorMessage('Please enter a shop or restaurant name.');
+      return;
+    }
+    if (!password.trim() || password.trim().length < 4) {
+      setErrorMessage('Please set a password of at least 4 characters to protect your shop.');
       return;
     }
 
@@ -43,6 +63,9 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
     const slug = `${baseSlug || 'shop'}-${Date.now().toString().slice(-4)}`;
 
     try {
+      // Hash the password before storing
+      const passwordHash = await StoreService.hashPassword(password.trim());
+
       const shopData = {
         name: name.trim(),
         slug,
@@ -60,16 +83,20 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
         currency: '₹',
         deliveryCharge: 30,
         freeDeliveryAbove: 499,
+        passwordHash,
       };
 
       const newShop = await StoreService.registerShop(shopData);
+      try {
+        await seedStarterProductsForShop(newShop.id, category);
+      } catch (seedErr) {
+        console.warn('Starter seeding error:', seedErr);
+      }
       playSound('success');
-      onRegistered(newShop);
+      // Show the credentials reveal panel first
+      setCreatedShop(newShop);
     } catch (err: any) {
-      // storeService already has a resilient local fallback — this should rarely trigger.
-      // If it does, create a local shop directly so the owner can still proceed.
-      console.error('Shop registration unexpected error:', err);
-      const fallbackShop = {
+      const fallbackShop: Shop = {
         id: `shop-${Date.now()}`,
         name: name.trim(),
         slug,
@@ -90,13 +117,119 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
         createdAt: new Date().toISOString(),
         logoUrl: '',
       } as Shop;
+      try {
+        await seedStarterProductsForShop(fallbackShop.id, category);
+      } catch { /* ignore */ }
       playSound('success');
-      onRegistered(fallbackShop);
+      setCreatedShop(fallbackShop);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // ─── Credentials Reveal Panel ─────────────────────────
+  if (createdShop) {
+    return (
+      <div className="modal-overlay">
+        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+          <style>{`
+            @keyframes credReveal { from{opacity:0;transform:scale(0.92) translateY(14px)} to{opacity:1;transform:scale(1) translateY(0)} }
+            .cred-box { animation: credReveal 0.45s cubic-bezier(0.34,1.56,0.64,1); }
+          `}</style>
+
+          <div className="cred-box" style={{ padding: '32px 28px', textAlign: 'center' }}>
+            {/* Success icon */}
+            <div style={{
+              width: 72, height: 72, borderRadius: '50%',
+              background: 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.06))',
+              border: '2px solid rgba(16,185,129,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 18px auto',
+            }}>
+              <ShieldCheck size={34} color="#10b981" />
+            </div>
+
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', margin: '0 0 6px 0' }}>
+              🎉 Shop Registered!
+            </h2>
+            <p style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: 28, lineHeight: 1.6 }}>
+              Your shop is live. Save your credentials below — you'll need them to log in as owner.
+            </p>
+
+            {/* Shop ID */}
+            <div style={{
+              background: 'rgba(99,102,241,0.08)',
+              border: '1.5px solid rgba(99,102,241,0.25)',
+              borderRadius: 14, padding: '14px 16px',
+              marginBottom: 12, textAlign: 'left',
+            }}>
+              <div style={{ fontSize: '0.72rem', color: '#818cf8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                🆔 Shop ID
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <code style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', letterSpacing: '0.04em', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {createdShop.id}
+                </code>
+                <button
+                  onClick={() => copyToClipboard(createdShop.id, 'id')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#818cf8', padding: 4, flexShrink: 0 }}
+                  title="Copy Shop ID"
+                >
+                  {copiedId ? <Check size={16} color="#10b981" /> : <Copy size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Password */}
+            <div style={{
+              background: 'rgba(249,115,22,0.07)',
+              border: '1.5px solid rgba(249,115,22,0.25)',
+              borderRadius: 14, padding: '14px 16px',
+              marginBottom: 24, textAlign: 'left',
+            }}>
+              <div style={{ fontSize: '0.72rem', color: '#fb923c', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                🔑 Password
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <code style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'monospace' }}>
+                  {password}
+                </code>
+                <button
+                  onClick={() => copyToClipboard(password, 'pw')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fb923c', padding: 4, flexShrink: 0 }}
+                  title="Copy Password"
+                >
+                  {copiedPw ? <Check size={16} color="#10b981" /> : <Copy size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div style={{
+              background: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.25)',
+              borderRadius: 10, padding: '10px 14px',
+              fontSize: '0.78rem', color: '#fbbf24',
+              lineHeight: 1.6, marginBottom: 24, textAlign: 'left',
+            }}>
+              ⚠️ <strong>Save these credentials</strong> — you'll need your Shop ID + Password to log back in if you log out on this device.
+            </div>
+
+            <button
+              onClick={() => onRegistered(createdShop)}
+              className="btn btn-primary btn-lg"
+              style={{ width: '100%', justifyContent: 'center', borderRadius: 14 }}
+            >
+              <Sparkles size={18} />
+              Go to My Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Registration Form ────────────────────────────────
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content wide" onClick={(e) => e.stopPropagation()}>
@@ -108,7 +241,7 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
             </div>
             <div>
               <h3 style={{ fontSize: '1.25rem' }}>Register Your Online Shop</h3>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Generate instant store link & customized QR Code</p>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Generate instant store link &amp; customized QR Code</p>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
@@ -132,15 +265,21 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
             </div>
 
             <div className="form-group">
-              <label className="form-label">Shop Business Type *</label>
+              <label className="form-label">Shop Business Type * (Burger Joint, Dine-In, etc.)</label>
               <select
                 className="form-select"
                 value={category}
                 onChange={(e) => {
                   const cat = e.target.value as ShopCategory;
                   setCategory(cat);
-                  if (cat === 'food' || cat === 'cafe') {
+                  if (cat === 'fast_food') {
+                    setBannerUrl('https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=1200&q=80');
+                  } else if (cat === 'food') {
                     setBannerUrl('https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80');
+                  } else if (cat === 'pizza') {
+                    setBannerUrl('https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80');
+                  } else if (cat === 'cafe') {
+                    setBannerUrl('https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=1200&q=80');
                   } else if (cat === 'clothing') {
                     setBannerUrl('https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80');
                   } else {
@@ -148,11 +287,13 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
                   }
                 }}
               >
-                <option value="food">🍽️ Restaurant / Food & Dining</option>
-                <option value="cafe">☕ Cafe & Bakery</option>
-                <option value="clothing">👕 Clothing & Fashion Boutique</option>
-                <option value="grocery">🛒 Grocery & Daily Essentials</option>
-                <option value="electronics">⚡ Electronics & Gadgets</option>
+                <option value="fast_food">🍔 Fast Food / Burger Joint (Burger King Style)</option>
+                <option value="food">🍽️ Dine-In Restaurant / Bistro</option>
+                <option value="pizza">🍕 Pizza &amp; Fast Casual</option>
+                <option value="cafe">☕ Cafe &amp; Bakery</option>
+                <option value="clothing">👕 Clothing &amp; Fashion Boutique</option>
+                <option value="grocery">🛒 Grocery &amp; Daily Essentials</option>
+                <option value="electronics">⚡ Electronics &amp; Gadgets</option>
                 <option value="other">🏪 General Retail Store</option>
               </select>
             </div>
@@ -190,12 +331,12 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
               />
             </div>
 
-            {(category === 'food' || category === 'cafe') && (
+            {(category === 'fast_food' || category === 'food' || category === 'pizza' || category === 'cafe') && (
               <div className="form-group">
-                <label className="form-label">Number of Dining Tables (For QR Codes)</label>
+                <label className="form-label">Number of Dining Tables <span style={{ color: '#f97316' }}>*</span> <span style={{ color: '#64748b', fontWeight: 400, fontSize: '0.78rem' }}>(each table gets its own QR standee)</span></label>
                 <input
                   type="number"
-                  min="0"
+                  min="1"
                   max="100"
                   className="form-input"
                   value={tableCount}
@@ -213,6 +354,35 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
               />
+            </div>
+
+            {/* Password field — full width */}
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#fb923c' }}>🔑</span>
+                Owner Password * <span style={{ color: '#64748b', fontWeight: 400, fontSize: '0.78rem' }}>(min. 4 chars — needed to log back in)</span>
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  className="form-input"
+                  placeholder="Create a password for your shop account"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={{ paddingRight: 44 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4,
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -294,7 +464,7 @@ export const ShopRegistrationModal: React.FC<ShopRegistrationModalProps> = ({
               ) : (
                 <>
                   <Sparkles size={18} />
-                  Register & Generate QR Code
+                  Register &amp; Generate QR Code
                 </>
               )}
             </button>

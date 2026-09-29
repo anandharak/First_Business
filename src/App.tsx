@@ -5,6 +5,7 @@ import { NamasteScreen } from './components/common/NamasteScreen';
 import { Header } from './components/common/Header';
 import { StoreQrModal } from './components/owner/StoreQrModal';
 import { ShopRegistrationModal } from './components/owner/ShopRegistrationModal';
+import { OwnerLoginModal } from './components/owner/OwnerLoginModal';
 import { AddProductModal } from './components/owner/AddProductModal';
 import { OwnerDashboard } from './components/owner/OwnerDashboard';
 import { CustomerStorefront } from './components/customer/CustomerStorefront';
@@ -15,7 +16,7 @@ import { CartAndCheckoutModal } from './components/customer/CartAndCheckoutModal
 import { LiveOrderStatus } from './components/customer/LiveOrderStatus';
 import { PostMealRatingModal } from './components/customer/PostMealRatingModal';
 import { CustomerQrScannerModal } from './components/customer/CustomerQrScannerModal';
-import { CustomerProfileModal } from './components/customer/CustomerProfileModal';
+import { UserProfileModal } from './components/common/UserProfileModal';
 import { playSound } from './utils/audio';
 import { BellRing, Database } from 'lucide-react';
 
@@ -80,6 +81,7 @@ export const App: React.FC = () => {
   // ─── Owner modals ──────────────────────────────────────
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [isOwnerLoginModalOpen, setIsOwnerLoginModalOpen] = useState(false);
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -191,14 +193,95 @@ export const App: React.FC = () => {
   const handleRoleSelect = (role: 'customer' | 'owner') => {
     setUserRole(role);
     localStorage.setItem(ROLE_KEY, role);
-    if (role === 'customer' && !customerInfo) {
-      setShowCustomerReg(true);
+    if (role === 'customer') {
+      if (!customerInfo) {
+        setShowCustomerReg(true);
+      }
     } else if (role === 'owner') {
       const ownedIds = getOwnerShopIds();
-      // Only show registration if no shops registered from this device
+      if (ownedIds.length === 0) {
+        // No shops registered yet — go straight to registration
+        setIsRegisterModalOpen(true);
+      } else {
+        // Has saved shops — must verify password to log in
+        setIsOwnerLoginModalOpen(true);
+      }
+    }
+  };
+
+  const handleSwitchRole = (newRole: 'customer' | 'owner') => {
+    setUserRole(newRole);
+    localStorage.setItem(ROLE_KEY, newRole);
+    if (newRole === 'owner') {
+      const ownedIds = getOwnerShopIds();
       if (ownedIds.length === 0) {
         setIsRegisterModalOpen(true);
+      } else if (ownerShops.length === 0) {
+        setIsOwnerLoginModalOpen(true);
       }
+    }
+    showToast(
+      newRole === 'owner' ? '🏪 Shop Owner Mode' : '🛍️ Customer Mode',
+      newRole === 'owner'
+        ? 'Switched to owner dashboard & store management.'
+        : 'Switched to customer storefront & ordering.'
+    );
+  };
+
+  const handleOwnerLoginSuccess = (shop: Shop) => {
+    setIsOwnerLoginModalOpen(false);
+    // Rebuild ownerShops from all shops
+    const ownedIds = getOwnerShopIds();
+    const owned = allShops.filter((s) => ownedIds.includes(s.id));
+    const inOwned = owned.find((s) => s.id === shop.id);
+    if (!inOwned) {
+      // Make sure this shop is tracked
+      addOwnerShopId(shop.id);
+      setAllShops((prev) => (prev.find((s) => s.id === shop.id) ? prev : [shop, ...prev]));
+      setOwnerShops((prev) => (prev.find((s) => s.id === shop.id) ? prev : [shop, ...prev]));
+    } else {
+      setOwnerShops(owned);
+    }
+    setActiveShopId(shop.id);
+    showToast(`🏪 Welcome back!`, `Logged in to ${shop.name}`);
+  };
+
+  const handleOwnerLogout = () => {
+    // Clear role but keep shop IDs so they can log back in with password
+    localStorage.removeItem(ROLE_KEY);
+    setUserRole(null);
+    setOwnerShops([]);
+    setActiveShopId('');
+    showToast('👋 Logged out', 'See you soon! Log back in with your Shop ID & Password.');
+  };
+
+  const handleDeleteAccount = async (shopId: string) => {
+    // Remove from owned IDs
+    try {
+      const existing = getOwnerShopIds().filter((id) => id !== shopId);
+      localStorage.setItem(OWNER_SHOP_IDS_KEY, JSON.stringify(existing));
+      // Also remove from local shop cache
+      const raw = localStorage.getItem('qrorder_local_shops');
+      if (raw) {
+        const shops: Shop[] = JSON.parse(raw);
+        localStorage.setItem('qrorder_local_shops', JSON.stringify(shops.filter((s) => s.id !== shopId)));
+      }
+    } catch { /* ignore */ }
+
+    // If no more shops, reset fully
+    const remaining = getOwnerShopIds();
+    if (remaining.length === 0) {
+      localStorage.removeItem(ROLE_KEY);
+      setUserRole(null);
+      setOwnerShops([]);
+      setAllShops((prev) => prev.filter((s) => s.id !== shopId));
+      setActiveShopId('');
+      showToast('🗑️ Shop Deleted', 'Your shop and all data has been permanently removed.');
+    } else {
+      setOwnerShops((prev) => prev.filter((s) => s.id !== shopId));
+      setAllShops((prev) => prev.filter((s) => s.id !== shopId));
+      setActiveShopId(remaining[0]);
+      showToast('🗑️ Shop Deleted', 'Shop removed. Switch to another shop or register a new one.');
     }
   };
 
@@ -281,13 +364,9 @@ export const App: React.FC = () => {
             animation: 'spin 0.9s linear infinite', margin: '0 auto 18px auto',
           }} />
           <p style={{ color: '#fff', fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 600 }}>
-            Connecting to MongoDB…
+            Loading your experience…
           </p>
-          <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 4 }}>
-            {window.location.hostname === 'localhost'
-              ? 'mongodb://127.0.0.1:27017/shop_platform'
-              : 'Connecting to Cloud Database…'}
-          </p>
+          <p style={{ color: '#334155', fontSize: '0.78rem', marginTop: 4 }}>Just a moment…</p>
         </div>
       </div>
     );
@@ -300,11 +379,13 @@ export const App: React.FC = () => {
     return (
       <>
         <NamasteScreen isQrContext={isQrContext} onSelectRole={handleRoleSelect} />
-        {/* Customer reg fires right after role select */}
+        {/* Customer reg (non-blocking, can skip or close) */}
         {showCustomerReg && (
           <CustomerRegistrationModal
             shopName={activeShop?.name}
             onComplete={handleCustomerRegistered}
+            onClose={() => setShowCustomerReg(false)}
+            onSkip={() => setShowCustomerReg(false)}
           />
         )}
         {/* Owner shop reg fires right after role select */}
@@ -312,8 +393,27 @@ export const App: React.FC = () => {
           <ShopRegistrationModal
             onClose={() => {
               setIsRegisterModalOpen(false);
+              // If they cancel registration, reset role
+              localStorage.removeItem(ROLE_KEY);
+              setUserRole(null);
             }}
             onRegistered={handleShopRegistered}
+          />
+        )}
+        {/* Owner login gate — when device has saved shop IDs */}
+        {isOwnerLoginModalOpen && (
+          <OwnerLoginModal
+            knownShopIds={getOwnerShopIds()}
+            onLoginSuccess={handleOwnerLoginSuccess}
+            onClose={() => {
+              setIsOwnerLoginModalOpen(false);
+              localStorage.removeItem(ROLE_KEY);
+              setUserRole(null);
+            }}
+            onRegisterNewShop={() => {
+              setIsOwnerLoginModalOpen(false);
+              setIsRegisterModalOpen(true);
+            }}
           />
         )}
         {isQrModalOpen && activeShop && (
@@ -328,23 +428,29 @@ export const App: React.FC = () => {
   }
 
   // ══════════════════════════════════════════════════════
-  // RENDER — Customer: needs to register first
-  // ══════════════════════════════════════════════════════
-  if (userRole === 'customer' && (!customerInfo || showCustomerReg)) {
-    return (
-      <CustomerRegistrationModal
-        shopName={activeShop?.name}
-        onComplete={handleCustomerRegistered}
-      />
-    );
-  }
-
-  // ══════════════════════════════════════════════════════
   // RENDER — Customer: no shop selected yet → shop finder
   // ══════════════════════════════════════════════════════
   if (userRole === 'customer' && !activeShop) {
     return (
-      <>
+      <div className="app-layout">
+        <Header
+          userRole={userRole}
+          activeShop={undefined}
+          allShops={[]}
+          cartCount={0}
+          customerInfo={customerInfo}
+          onShopChange={() => {}}
+          onOpenQrModal={() => setIsQrModalOpen(true)}
+          onOpenRegisterShop={() => setIsRegisterModalOpen(true)}
+          onOpenCart={() => setIsCartModalOpen(true)}
+          onOpenScanner={() => setIsScannerModalOpen(true)}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
+          onSwitchRole={handleSwitchRole}
+          onLogout={() => {
+            localStorage.removeItem(ROLE_KEY);
+            setUserRole(null);
+          }}
+        />
         <CustomerShopFinder
           onShopFound={(shop, table) => {
             handleShopSelectedFromScanner(shop, table);
@@ -357,7 +463,35 @@ export const App: React.FC = () => {
             onShopSelected={(shop, table) => handleShopSelectedFromScanner(shop, table)}
           />
         )}
-      </>
+        {showCustomerReg && (
+          <CustomerRegistrationModal
+            shopName={undefined}
+            onComplete={handleCustomerRegistered}
+            onClose={() => setShowCustomerReg(false)}
+            onSkip={() => setShowCustomerReg(false)}
+          />
+        )}
+        {isProfileModalOpen && (
+          <UserProfileModal
+            userRole={userRole}
+            customerInfo={customerInfo}
+            activeShop={undefined}
+            allShops={allShops}
+            onClose={() => setIsProfileModalOpen(false)}
+            onUpdateCustomerInfo={(updated) => {
+              setCustomerInfo(updated);
+              localStorage.setItem(CUSTOMER_KEY, JSON.stringify(updated));
+              showToast('👤 Profile Updated', `Saved details for ${updated.name}`);
+            }}
+            onSwitchRole={handleSwitchRole}
+            onOpenScanner={() => setIsScannerModalOpen(true)}
+            onResetRole={() => {
+              localStorage.removeItem(ROLE_KEY);
+              setUserRole(null);
+            }}
+          />
+        )}
+      </div>
     );
   }
 
@@ -366,8 +500,22 @@ export const App: React.FC = () => {
   // ══════════════════════════════════════════════════════
   if (userRole === 'owner' && !ownerHasShops) {
     return (
-      <>
-        <div style={{ minHeight: '100vh', background: '#070b14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div className="app-layout">
+        <Header
+          userRole={userRole}
+          activeShop={undefined}
+          allShops={[]}
+          cartCount={0}
+          customerInfo={customerInfo}
+          onShopChange={() => {}}
+          onOpenQrModal={() => setIsQrModalOpen(true)}
+          onOpenRegisterShop={() => setIsRegisterModalOpen(true)}
+          onOpenCart={() => setIsCartModalOpen(true)}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
+          onSwitchRole={handleSwitchRole}
+          onLogout={handleOwnerLogout}
+        />
+        <div style={{ minHeight: 'calc(100vh - 64px)', background: '#070b14', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
           <div style={{ textAlign: 'center', animation: 'fadeUp 0.5s ease', maxWidth: 460 }}>
             <div style={{
@@ -383,15 +531,24 @@ export const App: React.FC = () => {
               Register Your Shop
             </h2>
             <p style={{ color: '#64748b', fontSize: '0.88rem', lineHeight: 1.6, marginBottom: 28 }}>
-              You're registered as a shop owner. Set up your store to start receiving orders, generate your QR code, and manage your menu — all from one dashboard.
+              Set up your store to generate table QR codes, build your menu and start receiving dine-in orders from customers — just like Burger King kiosks, but digital.
             </p>
-            <button
-              onClick={() => setIsRegisterModalOpen(true)}
-              className="btn btn-primary"
-              style={{ padding: '14px 32px', fontSize: '0.95rem', borderRadius: 14, margin: '0 auto' }}
-            >
-              🏪 Set Up My Store
-            </button>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setIsRegisterModalOpen(true)}
+                className="btn btn-primary"
+                style={{ padding: '14px 28px', fontSize: '0.95rem', borderRadius: 14 }}
+              >
+                🏪 Set Up My Store
+              </button>
+              <button
+                onClick={() => handleSwitchRole('customer')}
+                className="btn btn-secondary"
+                style={{ padding: '14px 24px', fontSize: '0.92rem', borderRadius: 14 }}
+              >
+                🛍️ Switch to Customer Mode
+              </button>
+            </div>
           </div>
         </div>
 
@@ -401,19 +558,32 @@ export const App: React.FC = () => {
             onRegistered={handleShopRegistered}
           />
         )}
-        {isQrModalOpen && (ownerActiveShop || activeShop) && (
-          <StoreQrModal
-            shop={(ownerActiveShop || activeShop)!}
-            onClose={() => setIsQrModalOpen(false)}
-            onSimulateCustomerScan={() => setIsQrModalOpen(false)}
+        {isProfileModalOpen && (
+          <UserProfileModal
+            userRole={userRole}
+            customerInfo={customerInfo}
+            activeShop={undefined}
+            allShops={myOwnerShops}
+            onClose={() => setIsProfileModalOpen(false)}
+            onUpdateCustomerInfo={(updated) => {
+              setCustomerInfo(updated);
+              localStorage.setItem(CUSTOMER_KEY, JSON.stringify(updated));
+              showToast('👤 Profile Updated', `Saved details for ${updated.name}`);
+            }}
+            onSwitchRole={handleSwitchRole}
+            onOpenRegisterShop={() => setIsRegisterModalOpen(true)}
+            onResetRole={() => {
+              localStorage.removeItem(ROLE_KEY);
+              setUserRole(null);
+            }}
           />
         )}
-      </>
+      </div>
     );
   }
 
   // ══════════════════════════════════════════════════════
-  // RENDER — MAIN APP (role-locked)
+  // RENDER — MAIN APP
   // ══════════════════════════════════════════════════════
   const displayShop = userRole === 'owner' ? ownerActiveShop : activeShop;
 
@@ -435,26 +605,27 @@ export const App: React.FC = () => {
         onOpenRegisterShop={() => setIsRegisterModalOpen(true)}
         onOpenCart={() => setIsCartModalOpen(true)}
         onOpenScanner={() => setIsScannerModalOpen(true)}
-        onOpenCustomerProfile={() => setIsProfileModalOpen(true)}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
+        onSwitchRole={handleSwitchRole}
+        onLogout={userRole === 'owner' ? handleOwnerLogout : undefined}
       />
 
-      {/* MongoDB status strip */}
-      <div style={{
-        background: isMongoConnected ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)',
-        borderBottom: `1px solid ${isMongoConnected ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)'}`,
-        padding: '3px 16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-        fontSize: '0.7rem', color: isMongoConnected ? '#34d399' : '#f87171', fontWeight: 600,
-      }}>
-        <Database size={10} />
-        {isMongoConnected
-          ? `MongoDB Connected (${window.location.hostname === 'localhost' ? 'Local' : 'Cloud'})`
-          : window.location.hostname === 'localhost'
-          ? 'MongoDB Disconnected — Run: node server/index.js'
-          : 'MongoDB Disconnected — Set MONGODB_URI in Vercel Project Settings'}
-      </div>
+      {/* DB status: tiny dot bottom-right, only when disconnected */}
+      {!isMongoConnected && (
+        <div style={{
+          position: 'fixed', bottom: 12, right: 12, zIndex: 9999,
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)',
+          borderRadius: 20, padding: '4px 10px',
+          fontSize: '0.68rem', color: '#f87171', fontWeight: 600,
+          pointerEvents: 'none',
+        }}>
+          <Database size={10} />
+          DB Offline
+        </div>
+      )}
 
-      {/* Main content — role-locked */}
+      {/* Main content */}
       <main style={{ flex: 1 }}>
         {userRole === 'owner' ? (
           <OwnerDashboard
@@ -465,6 +636,7 @@ export const App: React.FC = () => {
               setEditingProduct(prod || null);
               setIsAddProductModalOpen(true);
             }}
+            onDeleteAccount={handleDeleteAccount}
           />
         ) : activeTrackingOrderId ? (
           <LiveOrderStatus
@@ -555,23 +727,39 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Customer Details & Profile Modal */}
-      {isProfileModalOpen && customerInfo && (
-        <CustomerProfileModal
+      {/* User Profile Modal (Customer & Owner) */}
+      {isProfileModalOpen && (
+        <UserProfileModal
+          userRole={userRole}
           customerInfo={customerInfo}
-          activeShop={activeShop}
+          activeShop={displayShop}
+          allShops={userRole === 'owner' ? myOwnerShops : allShops}
           onClose={() => setIsProfileModalOpen(false)}
           onUpdateCustomerInfo={(updated) => {
             setCustomerInfo(updated);
             localStorage.setItem(CUSTOMER_KEY, JSON.stringify(updated));
             showToast('👤 Profile Updated', `Saved details for ${updated.name}`);
           }}
+          onSwitchRole={handleSwitchRole}
           onOpenScanner={() => setIsScannerModalOpen(true)}
           onViewOrder={(orderId) => setActiveTrackingOrderId(orderId)}
-          onSwitchRole={() => {
+          onOpenQrModal={() => setIsQrModalOpen(true)}
+          onOpenRegisterShop={() => setIsRegisterModalOpen(true)}
+          onResetRole={() => {
             localStorage.removeItem(ROLE_KEY);
             setUserRole(null);
           }}
+          onSelectShop={(id) => setActiveShopId(id)}
+        />
+      )}
+
+      {/* Customer Registration Modal (non-blocking overlay) */}
+      {showCustomerReg && (
+        <CustomerRegistrationModal
+          shopName={activeShop?.name}
+          onComplete={handleCustomerRegistered}
+          onClose={() => setShowCustomerReg(false)}
+          onSkip={() => setShowCustomerReg(false)}
         />
       )}
     </div>

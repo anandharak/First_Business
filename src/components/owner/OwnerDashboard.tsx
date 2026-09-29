@@ -28,6 +28,7 @@ interface OwnerDashboardProps {
   onOpenQrModal: () => void;
   onOpenRegisterShop: () => void;
   onOpenAddProduct: (product?: Product) => void;
+  onDeleteAccount?: (shopId: string) => void;
 }
 
 export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
@@ -35,6 +36,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onOpenQrModal,
   onOpenRegisterShop,
   onOpenAddProduct,
+  onDeleteAccount,
 }) => {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'reviews' | 'settings'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -42,6 +44,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   const [reviews, setReviews] = useState<Review[]>([]);
   const [orderFilter, setOrderFilter] = useState<OrderStatus | 'all'>('all');
   const [menuSearch, setMenuSearch] = useState('');
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState(0); // 0=idle, 1=first, 2=typing
+  const [deleteTyped, setDeleteTyped] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadData = async () => {
     try {
@@ -338,6 +343,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           >
             <Star size={18} />
             Customer Ratings ({reviews.length})
+          </button>
+
+          <button
+            className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => { setActiveTab('settings'); playSound('click'); }}
+            style={{ borderRadius: '12px 12px 0 0' }}
+          >
+            ⚙️ Settings
           </button>
         </div>
 
@@ -707,6 +720,114 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 4: SETTINGS / DANGER ZONE */}
+      {activeTab === 'settings' && (
+        <div style={{ maxWidth: 560 }}>
+          {/* Shop Info */}
+          <div className="glass-panel" style={{ padding: '20px 24px', marginBottom: 20 }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', margin: '0 0 14px 0' }}>Shop Information</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: '#64748b' }}>Shop Name</span>
+                <span style={{ color: '#fff', fontWeight: 600 }}>{currentShop.name}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: '#64748b' }}>Shop ID</span>
+                <code style={{ color: '#818cf8', fontFamily: 'monospace', fontSize: '0.82rem' }}>{currentShop.id}</code>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: '#64748b' }}>Category</span>
+                <span style={{ color: '#fff', fontWeight: 600, textTransform: 'capitalize' }}>{currentShop.category}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: '#64748b' }}>Slug / Link</span>
+                <code style={{ color: '#f97316', fontFamily: 'monospace', fontSize: '0.8rem' }}>?shop={currentShop.slug}</code>
+              </div>
+            </div>
+          </div>
+
+          {/* Danger Zone */}
+          <div style={{
+            border: '1.5px solid rgba(239,68,68,0.3)',
+            borderRadius: 16, padding: '20px 24px',
+            background: 'rgba(239,68,68,0.04)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <Trash2 size={18} color="#f87171" />
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#f87171', margin: 0 }}>Danger Zone</h3>
+            </div>
+            <p style={{ color: '#64748b', fontSize: '0.84rem', lineHeight: 1.6, marginBottom: 18 }}>
+              Permanently delete this shop account. This will remove all products, orders, and reviews from the database. <strong style={{ color: '#f87171' }}>This action cannot be undone.</strong>
+            </p>
+
+            {deleteConfirmStep === 0 && (
+              <button
+                onClick={() => setDeleteConfirmStep(1)}
+                className="btn btn-sm"
+                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Trash2 size={14} />
+                Delete My Shop Account
+              </button>
+            )}
+
+            {deleteConfirmStep === 1 && (
+              <div style={{ animation: 'fadeUp 0.3s ease' }}>
+                <p style={{ color: '#fbbf24', fontSize: '0.83rem', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '10px 12px', lineHeight: 1.5 }}>
+                  ⚠️ Are you sure? Type <strong style={{ color: '#fff', fontFamily: 'monospace' }}>DELETE</strong> below to confirm.
+                </p>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder='Type DELETE to confirm'
+                  value={deleteTyped}
+                  onChange={(e) => setDeleteTyped(e.target.value)}
+                  style={{ marginBottom: 12 }}
+                />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => { setDeleteConfirmStep(0); setDeleteTyped(''); }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={deleteTyped !== 'DELETE' || isDeleting}
+                    onClick={async () => {
+                      if (deleteTyped !== 'DELETE') return;
+                      setIsDeleting(true);
+                      try {
+                        await StoreService.deleteShop(currentShop.id);
+                        if (onDeleteAccount) onDeleteAccount(currentShop.id);
+                      } finally {
+                        setIsDeleting(false);
+                      }
+                    }}
+                    className="btn btn-sm"
+                    style={{
+                      background: deleteTyped === 'DELETE' ? 'rgba(239,68,68,0.85)' : 'rgba(239,68,68,0.15)',
+                      border: '1px solid rgba(239,68,68,0.4)',
+                      color: deleteTyped === 'DELETE' ? '#fff' : '#f87171',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {isDeleting ? (
+                      <>
+                        <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                        Deleting…
+                      </>
+                    ) : (
+                      <><Trash2 size={14} /> Permanently Delete</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -52,7 +52,7 @@ const ShopSchema = new mongoose.Schema(
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
-    category: { type: String, default: 'food' },
+    category: { type: String, default: 'fast_food' },
     tagline: { type: String, default: '' },
     description: { type: String, default: '' },
     phone: { type: String, default: '' },
@@ -65,6 +65,7 @@ const ShopSchema = new mongoose.Schema(
     currency: { type: String, default: '₹' },
     deliveryCharge: { type: Number, default: 30 },
     freeDeliveryAbove: { type: Number, default: 499 },
+    passwordHash: { type: String, default: '' },
     createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
@@ -245,6 +246,41 @@ app.put('/api/shops/:id', async (req, res) => {
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/shops/:id', async (req, res) => {
+  try {
+    const shop = await ShopModel.findOne({ id: req.params.id });
+    if (!shop) return res.status(404).json({ error: 'Shop not found' });
+    // Cascade delete: products and orders belonging to this shop
+    await ProductModel.deleteMany({ shopId: req.params.id });
+    await OrderModel.deleteMany({ shopId: req.params.id });
+    await ReviewModel.deleteMany({ shopId: req.params.id });
+    await ShopModel.findOneAndDelete({ id: req.params.id });
+    res.json({ success: true, id: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Verify owner password (hash sent from client via Web Crypto SHA-256)
+app.post('/api/shops/:id/verify-password', async (req, res) => {
+  try {
+    const { passwordHash } = req.body;
+    const shop = await ShopModel.findOne({ id: req.params.id });
+    if (!shop) return res.status(404).json({ error: 'Shop not found', valid: false });
+    if (!shop.passwordHash) {
+      // No password set — allow access (legacy shops)
+      return res.json({ valid: true, shop });
+    }
+    const valid = shop.passwordHash === passwordHash;
+    if (valid) {
+      return res.json({ valid: true, shop });
+    }
+    return res.status(401).json({ valid: false, error: 'Incorrect password' });
+  } catch (err) {
+    res.status(500).json({ error: err.message, valid: false });
   }
 });
 

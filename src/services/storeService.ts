@@ -284,4 +284,52 @@ export const StoreService = {
     await fetch(`${API_BASE}/reset`, { method: 'POST' });
     notifySubscribers('store_reset');
   },
+
+  // DELETE shop and cascade remove all related data
+  async deleteShop(shopId: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/shops/${shopId}`, { method: 'DELETE' });
+      if (res.ok) {
+        // Remove from local shops cache
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('qrorder_local_shops');
+            if (raw) {
+              const shops: Shop[] = JSON.parse(raw);
+              localStorage.setItem('qrorder_local_shops', JSON.stringify(shops.filter((s) => s.id !== shopId)));
+            }
+          } catch { /* ignore */ }
+        }
+        notifySubscribers('shop_deleted', shopId);
+        return true;
+      }
+    } catch (err) {
+      console.warn('Delete shop error:', err);
+    }
+    return false;
+  },
+
+  // Hash password client-side with Web Crypto SHA-256 and verify against server
+  async hashPassword(password: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  },
+
+  async verifyShopPassword(shopId: string, password: string): Promise<{ valid: boolean; shop?: Shop }> {
+    try {
+      const passwordHash = await StoreService.hashPassword(password);
+      const res = await fetch(`${API_BASE}/shops/${shopId}/verify-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passwordHash }),
+      });
+      const data = await res.json();
+      return { valid: data.valid === true, shop: data.shop };
+    } catch {
+      return { valid: false };
+    }
+  },
 };

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Store, User, QrCode, ChefHat, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Store, User, Sparkles } from 'lucide-react';
 
 interface NamasteScreenProps {
   /** true when URL already has ?shop= — auto-suggest customer role */
@@ -7,13 +7,99 @@ interface NamasteScreenProps {
   onSelectRole: (role: 'customer' | 'owner') => void;
 }
 
+/** Time-based greeting + emoji */
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 5)  return { text: 'Good Night', emoji: '🌙', sub: 'Late-night craving? We\'ve got you.' };
+  if (h < 12) return { text: 'Good Morning', emoji: '☀️', sub: 'Start your day with a fresh order.' };
+  if (h < 17) return { text: 'Good Afternoon', emoji: '🌤️', sub: 'Lunch time? Browse your favourite shops.' };
+  if (h < 20) return { text: 'Good Evening', emoji: '🌇', sub: 'Wind down with great food & more.' };
+  return { text: 'Good Night', emoji: '🌙', sub: 'Dinner or late snack? We have it all.' };
+}
+
+/** Simple typewriter hook */
+function useTypewriter(text: string, delay = 40, startDelay = 800) {
+  const [displayed, setDisplayed] = useState('');
+  useEffect(() => {
+    setDisplayed('');
+    let i = 0;
+    const init = setTimeout(() => {
+      const t = setInterval(() => {
+        setDisplayed(text.slice(0, ++i));
+        if (i >= text.length) clearInterval(t);
+      }, delay);
+      return () => clearInterval(t);
+    }, startDelay);
+    return () => clearTimeout(init);
+  }, [text, delay, startDelay]);
+  return displayed;
+}
+
 export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSelectRole }) => {
   const [visible, setVisible] = useState(false);
   const [hovered, setHovered] = useState<'customer' | 'owner' | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const greeting = getGreeting();
+  const typewriterText = isQrContext
+    ? 'You scanned a shop QR code. Tell us who you are to continue.'
+    : greeting.sub;
+  const typedSub = useTypewriter(typewriterText, 32, 600);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 120);
     return () => clearTimeout(t);
+  }, []);
+
+  // ─── Particle canvas ─────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const count = Math.min(Math.floor(window.innerWidth / 14), 80);
+    const particles = Array.from({ length: count }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.6 + 0.4,
+      dx: (Math.random() - 0.5) * 0.35,
+      dy: (Math.random() - 0.5) * 0.35,
+      alpha: Math.random() * 0.5 + 0.15,
+      color: Math.random() > 0.5 ? '#f97316' : '#8b5cf6',
+    }));
+
+    let raf: number;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach((p) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.alpha;
+        ctx.fill();
+        p.x += p.dx;
+        p.y += p.dy;
+        if (p.x < 0) p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0) p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
+      });
+      ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+    };
   }, []);
 
   return (
@@ -46,6 +132,18 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
           0%   { background-position: -200% center; }
           100% { background-position: 200% center; }
         }
+        @keyframes card-slide-left {
+          from { opacity: 0; transform: translateX(-32px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes card-slide-right {
+          from { opacity: 0; transform: translateX(32px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes greeting-pop {
+          from { opacity: 0; transform: scale(0.85) translateY(10px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
         .namaste-role-card {
           position: relative;
           background: rgba(255,255,255,0.04);
@@ -73,10 +171,29 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
           transition: opacity 0.3s;
           border-radius: 20px;
         }
-        .namaste-role-card:hover .card-glow {
-          opacity: 1;
+        .namaste-role-card:hover .card-glow { opacity: 1; }
+        .greeting-badge {
+          animation: greeting-pop 0.55s cubic-bezier(0.34,1.56,0.64,1) 0.2s both;
         }
+        .customer-card-anim {
+          animation: card-slide-left 0.55s cubic-bezier(0.34,1.56,0.64,1) 0.45s both;
+        }
+        .owner-card-anim {
+          animation: card-slide-right 0.55s cubic-bezier(0.34,1.56,0.64,1) 0.55s both;
+        }
+        .typewriter-cursor::after {
+          content: '|';
+          animation: blink 0.8s step-end infinite;
+          color: #f97316;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
       `}</style>
+
+      {/* Particle canvas */}
+      <canvas
+        ref={canvasRef}
+        style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0 }}
+      />
 
       {/* Ambient orbs */}
       <div style={{
@@ -95,14 +212,6 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
         animation: 'pulse-orb 6s ease-in-out infinite 1.5s',
         pointerEvents: 'none',
       }} />
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%',
-        width: 600, height: 600,
-        transform: 'translate(-50%, -50%)',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(249,115,22,0.04) 0%, transparent 60%)',
-        pointerEvents: 'none',
-      }} />
 
       {/* Content */}
       <div
@@ -116,8 +225,22 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
           transition: 'opacity 0.7s ease, transform 0.7s ease',
         }}
       >
+        {/* Greeting Badge */}
+        <div className="greeting-badge" style={{ textAlign: 'center', marginBottom: 20 }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 30, padding: '6px 16px',
+            fontSize: '0.85rem', color: '#e2e8f0', fontWeight: 600,
+          }}>
+            <span style={{ fontSize: '1.1rem' }}>{greeting.emoji}</span>
+            {greeting.text}
+          </div>
+        </div>
+
         {/* Emoji + Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{
             fontSize: '3.8rem',
             display: 'inline-block',
@@ -148,7 +271,7 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
           </h1>
 
           {/* Brand */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
             <div style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               width: 30, height: 30, borderRadius: 8,
@@ -168,13 +291,12 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
             </span>
           </div>
 
+          {/* Typewriter subtitle */}
           <p style={{
             color: '#64748b', fontSize: '0.88rem', lineHeight: 1.6,
-            maxWidth: 340, margin: '0 auto',
-          }}>
-            {isQrContext
-              ? 'You scanned a shop QR code. Tell us who you are to continue.'
-              : 'Your complete digital ordering platform. Please tell us who you are.'}
+            maxWidth: 340, margin: '0 auto', minHeight: '2.8rem',
+          }} className="typewriter-cursor">
+            {typedSub}
           </p>
         </div>
 
@@ -183,7 +305,7 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
 
           {/* CUSTOMER CARD */}
           <div
-            className="namaste-role-card"
+            className="namaste-role-card customer-card-anim"
             onClick={() => onSelectRole('customer')}
             onMouseEnter={() => setHovered('customer')}
             onMouseLeave={() => setHovered(null)}
@@ -208,12 +330,12 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
               I'm a Customer
             </h3>
             <p style={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.5, margin: 0 }}>
-              Scan shop QR or use store link to order food, clothes & more
+              Scan the shop's table QR code, browse the menu and place your dine-in order
             </p>
 
             {/* Feature pills */}
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 5, marginTop: 14 }}>
-              {['📷 Scan QR', '🛒 Order', '💳 Pay'].map((t) => (
+              {['📷 Scan QR', '🍔 Browse Menu', '🛎️ Dine-In Order'].map((t) => (
                 <span key={t} style={{
                   fontSize: '0.7rem', color: '#f97316',
                   background: 'rgba(249,115,22,0.08)',
@@ -226,7 +348,7 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
 
           {/* OWNER CARD */}
           <div
-            className="namaste-role-card owner"
+            className="namaste-role-card owner owner-card-anim"
             onClick={() => onSelectRole('owner')}
             onMouseEnter={() => setHovered('owner')}
             onMouseLeave={() => setHovered(null)}
@@ -251,12 +373,12 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
               I'm a Shop Owner
             </h3>
             <p style={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.5, margin: 0 }}>
-              Register your store, manage menu, track live orders and reviews
+              Register your shop, generate table QR codes, add menu items and manage live dine-in orders
             </p>
 
             {/* Feature pills */}
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 5, marginTop: 14 }}>
-              {['🏪 Register', '📦 Manage', '📊 Analytics'].map((t) => (
+              {['🏪 Register Shop', '📋 Add Menu', '🔔 Live Orders'].map((t) => (
                 <span key={t} style={{
                   fontSize: '0.7rem', color: '#8b5cf6',
                   background: 'rgba(139,92,246,0.08)',
@@ -271,7 +393,7 @@ export const NamasteScreen: React.FC<NamasteScreenProps> = ({ isQrContext, onSel
         {/* Note */}
         <p style={{ textAlign: 'center', fontSize: '0.74rem', color: '#334155', lineHeight: 1.5 }}>
           <Sparkles size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4, color: '#475569' }} />
-          Your choice is remembered on this device. Powered by MongoDB.
+          Your choice is remembered on this device. Switch roles anytime from the header.
         </p>
       </div>
     </div>

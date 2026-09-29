@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Phone, ArrowRight, Sparkles } from 'lucide-react';
+import { User, Phone, ArrowRight, Sparkles, X } from 'lucide-react';
 
 export interface CustomerInfo {
   name: string;
@@ -10,11 +10,15 @@ interface CustomerRegistrationModalProps {
   /** Pre-fill hint if we detected a shop context */
   shopName?: string;
   onComplete: (info: CustomerInfo) => void;
+  onClose?: () => void;
+  onSkip?: () => void;
 }
 
 export const CustomerRegistrationModal: React.FC<CustomerRegistrationModalProps> = ({
   shopName,
   onComplete,
+  onClose,
+  onSkip,
 }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -79,23 +83,51 @@ export const CustomerRegistrationModal: React.FC<CustomerRegistrationModalProps>
       `}</style>
 
       <div style={{
+        position: 'relative',
         background: 'linear-gradient(160deg, rgba(20,27,45,0.98) 0%, rgba(15,20,35,0.98) 100%)',
         border: '1px solid rgba(255,255,255,0.08)',
         borderRadius: 24,
-        padding: '40px 36px',
+        padding: '36px 32px',
         width: '100%',
         maxWidth: 440,
         boxShadow: '0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(249,115,22,0.08)',
         animation: 'slideUpModal 0.4s cubic-bezier(0.34,1.56,0.64,1)',
       }}>
+        {/* Optional close button */}
+        {(onClose || onSkip) && (
+          <button
+            type="button"
+            onClick={onClose || onSkip}
+            style={{
+              position: 'absolute',
+              top: 18,
+              right: 18,
+              background: 'rgba(255,255,255,0.06)',
+              border: 'none',
+              borderRadius: '50%',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+            title="Close / Browse as Guest"
+          >
+            <X size={18} />
+          </button>
+        )}
+
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{
             width: 64, height: 64, borderRadius: 18,
             background: 'linear-gradient(135deg, rgba(249,115,22,0.25), rgba(249,115,22,0.08))',
             border: '1px solid rgba(249,115,22,0.3)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 18px auto',
+            margin: '0 auto 16px auto',
           }}>
             <User size={30} color="#f97316" />
           </div>
@@ -109,7 +141,7 @@ export const CustomerRegistrationModal: React.FC<CustomerRegistrationModalProps>
           <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0, lineHeight: 1.5 }}>
             {shopName
               ? `Tell us your name to order at ${shopName}`
-              : 'Quick registration so shops know who\'s ordering'}
+              : 'Save your profile to quickly order and track items'}
           </p>
         </div>
 
@@ -138,7 +170,7 @@ export const CustomerRegistrationModal: React.FC<CustomerRegistrationModalProps>
           </div>
 
           {/* Phone field */}
-          <div style={{ marginBottom: 28, position: 'relative' }}>
+          <div style={{ marginBottom: 24, position: 'relative' }}>
             <label style={{ display: 'block', fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               Mobile Number
             </label>
@@ -174,16 +206,38 @@ export const CustomerRegistrationModal: React.FC<CustomerRegistrationModalProps>
               </>
             ) : (
               <>
-                Continue to Shop
+                Save &amp; Continue
                 <ArrowRight size={18} />
               </>
             )}
           </button>
+
+          {/* Skip compulsion button */}
+          {(onSkip || onClose) && (
+            <button
+              type="button"
+              onClick={onSkip || onClose}
+              className="btn btn-secondary"
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '0.88rem',
+                borderRadius: 12,
+                justifyContent: 'center',
+                marginTop: 10,
+                background: 'transparent',
+                borderColor: 'rgba(255,255,255,0.12)',
+                color: '#94a3b8',
+              }}
+            >
+              Skip &amp; Browse as Guest
+            </button>
+          )}
         </form>
 
-        <p style={{ textAlign: 'center', fontSize: '0.72rem', color: '#334155', marginTop: 18, lineHeight: 1.5 }}>
-          <Sparkles size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3, color: '#475569' }} />
-          Your info is only used to identify your orders — we don't share it.
+        <p style={{ textAlign: 'center', fontSize: '0.72rem', color: '#475569', marginTop: 18, lineHeight: 1.5, marginBottom: 0 }}>
+          <Sparkles size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3, color: '#64748b' }} />
+          You can update or add your profile anytime from the top bar.
         </p>
       </div>
     </div>
